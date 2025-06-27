@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>RustMagic Leaderboard</title>
+<style>
+  body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #0f0f2b;
+    color: #ddd;
+    overflow-x: hidden;
+  }
+  header {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    padding: 20px 0;
+  }
+  button {
+    background: #004080;
+    border: 2px solid #0066cc;
+    color: white;
+    padding: 10px 25px;
+    font-weight: bold;
+    cursor: pointer;
+    border-radius: 6px;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  button:hover {
+    transform: scale(1.1);
+    box-shadow: 0 0 8px #3399ff;
+  }
+  .active {
+    background: #007acc;
+    box-shadow: 0 0 10px #3399ff;
+  }
+  main {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 0 20px 40px;
+  }
+  .top3 {
+    display: flex;
+    justify-content: center;
+    gap: 30px;
+    margin-bottom: 40px;
+  }
+  .top-card {
+    background: #1a1a40cc; /* прозорий темний фон */
+    border-radius: 12px;
+    padding: 20px;
+    width: 160px;
+    text-align: center;
+    box-shadow: 0 0 15px #3399ff;
+    border: 2px solid #3399ff; /* підсвітка контуру */
+    transition: box-shadow 0.3s ease;
+  }
+  .top-card img {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    margin-bottom: 10px;
+  }
+  .top-card .name {
+    font-weight: bold;
+    font-size: 1.2em;
+  }
+  .top-card .wager {
+    color: #80c0ff;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #121b30cc; /* прозорий темний фон */
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  th, td {
+    padding: 12px;
+    text-align: center;
+    border-bottom: 1px solid #264f9d;
+  }
+  th {
+    background: #264f9d;
+    color: #aad4ff;
+  }
+  tr:nth-child(even) {
+    background: #18305ccc;
+  }
+  tr:hover {
+    background: #2f4f8dcc;
+  }
+  /* Анімований фон крапель */
+  #backgroundCanvas {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    pointer-events: none;
+    z-index: -1;
+  }
+  #timer {
+    text-align: center;
+    color: #5599ffcc;
+    font-weight: 600;
+    margin-bottom: 30px;
+    font-size: 1.1em;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <button id="btn-rustmagic" class="active">RustMagic</button>
+  <button id="btn-cheersino">Cheersino</button>
+</header>
+
+<main>
+  <div id="timer">Loading timer...</div>
+
+  <div class="top3" id="top3"></div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Place</th>
+        <th>Avatar</th>
+        <th>Nickname</th>
+        <th>Wager</th>
+      </tr>
+    </thead>
+    <tbody id="others"></tbody>
+  </table>
+</main>
+
+<canvas id="backgroundCanvas"></canvas>
+
+<script>
+  const API_BASE = 'apileaderboard';
+  let currentBoard = 'rustmagic';
+
+  // Кнопки перемикання
+  const btnRustmagic = document.getElementById('btn-rustmagic');
+  const btnCheersino = document.getElementById('btn-cheersino');
+
+  btnRustmagic.onclick = () => {
+    currentBoard = 'rustmagic';
+    btnRustmagic.classList.add('active');
+    btnCheersino.classList.remove('active');
+    loadLeaderboard();
+  };
+  btnCheersino.onclick = () => {
+    currentBoard = 'cheersino';
+    btnCheersino.classList.add('active');
+    btnRustmagic.classList.remove('active');
+    loadLeaderboard();
+  };
+
+  function getTimeRange() {
+    const now = Math.floor(Date.now() / 1000);
+    const weekAgo = now - 7 * 24 * 3600;
+    return { fromTime: weekAgo, toTime: now };
+  }
+
+  async function fetchBoard(board) {
+    const { fromTime, toTime } = getTimeRange();
+    const url = new URL(API_BASE, window.location.origin);
+    url.searchParams.set('fromTime', fromTime);
+    url.searchParams.set('toTime', toTime);
+
+    try {
+      const res = await fetch(url.toString());
+      if (!res.ok) throw new Error('Network response was not ok');
+      const json = await res.json();
+      // Фільтруємо по board, якщо є поле
+      if (json.data && json.data.length > 0) {
+        return json.data.filter(u => u.board && u.board.toLowerCase() === board.toLowerCase());
+      }
+      return [];
+    } catch (e) {
+      console.error('Failed to fetch leaderboard:', e);
+      return [];
+    }
+  }
+
+  function updateLeaderboard(players) {
+    players.sort((a,b) => b.wager - a.wager);
+
+    const top3Div = document.getElementById('top3');
+    const othersTbody = document.getElementById('others');
+    top3Div.innerHTML = '';
+    othersTbody.innerHTML = '';
+
+    // Топ 3
+    players.slice(0,3).forEach((player, i) => {
+      const card = document.createElement('div');
+      card.className = 'top-card';
+      card.innerHTML = `
+        <img src="${player.avatar}" alt="${player.name}" />
+        <div class="name">${player.name}</div>
+        <div class="wager">${player.wager} coins</div>
+      `;
+      top3Div.appendChild(card);
+    });
+
+    // Інші (4-10)
+    players.slice(3,10).forEach((player,i) => {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td>${i + 4}</td>
+        <td><img src="${player.avatar}" alt="${player.name}" width="40" height="40" style="border-radius:50%" /></td>
+        <td>${player.name}</td>
+        <td>${player.wager} coins</td>
+      `;
+      othersTbody.appendChild(row);
+    });
+  }
+
+  async function loadLeaderboard() {
+    document.getElementById('timer').textContent = 'Loading...';
+    const players = await fetchBoard(currentBoard);
+    updateLeaderboard(players);
+    updateTimer();
+  }
+
+  // Таймер, що показує скільки часу залишилось до оновлення (щотижня)
+  function updateTimer() {
+    const now = Date.now();
+    const nextUpdate = new Date();
+    nextUpdate.setHours(0,0,0,0);
+    // Наступна неділя о 00:00
+    const day = nextUpdate.getDay();
+    const daysUntilSunday = (7 - day) % 7 || 7;
+    nextUpdate.setDate(nextUpdate.getDate() + daysUntilSunday);
+
+    const diff = nextUpdate - now;
+    const hours = Math.floor(diff / 1000 / 60 / 60);
+    const minutes = Math.floor((diff / 1000 / 60) % 60);
+    const seconds = Math.floor((diff / 1000) % 60);
+
+    document.getElementById('timer').textContent =
+      `Next update in: ${hours}h ${minutes}m ${seconds}s`;
+  }
+
+  setInterval(updateTimer, 1000);
+
+  window.onload = loadLeaderboard;
+
+  // --- Фон із крапельками
+
+  const canvas = document.getElementById('backgroundCanvas');
+  const ctx = canvas.getContext('2d');
+  let width, height;
+
+  function resize() {
+    width = canvas.width = window.innerWidth;
+    height = canvas.height = window.innerHeight;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  class Drop {
+    constructor() {
+      this.x = Math.random() * width;
+      this.y = Math.random() * height;
+      this.length = 5 + Math.random() * 15;
+      this.speed = 1 + Math.random() * 2;
+      this.opacity = 0.1 + Math.random() * 0.4;
+    }
+    fall() {
+      this.y += this.speed;
+      if (this.y > height) {
+        this.x = Math.random() * width;
+        this.y = -this.length;
+      }
+    }
+    draw() {
+      ctx.beginPath();
+      ctx.strokeStyle = `rgba(170, 200, 255, ${this.opacity})`;
+      ctx.lineWidth = 1;
+      ctx.moveTo(this.x, this.y);
+      ctx.lineTo(this.x, this.y + this.length);
+      ctx.stroke();
+    }
+  }
+
+  const drops = [];
+  for(let i = 0; i < 100; i++) {
+    drops.push(new Drop());
+  }
+
+  function animate() {
+    ctx.clearRect(0,0,width,height);
+    drops.forEach(drop => {
+      drop.fall();
+      drop.draw();
+    });
+    requestAnimationFrame(animate);
+  }
+  animate();
+</script>
+</body>
+</html>
